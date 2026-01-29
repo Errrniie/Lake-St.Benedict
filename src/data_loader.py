@@ -27,12 +27,13 @@ class LakeDataLoader:
         self.data = self.data.sort_values('date')
         return self.data
     
-    def prepare_sequences(self, sequence_length=30):
+    def prepare_sequences(self, sequence_length=30, fit_scaler=True):
         """
         Prepare sequences for time series prediction.
         
         Args:
             sequence_length: Number of past days to use for prediction
+            fit_scaler: If True, fit the scaler on the data. Set to False for test data.
             
         Returns:
             X: Input sequences
@@ -45,7 +46,10 @@ class LakeDataLoader:
         temperatures = self.data['temperature'].values.reshape(-1, 1)
         
         # Normalize the data
-        scaled_temps = self.scaler.fit_transform(temperatures)
+        if fit_scaler:
+            scaled_temps = self.scaler.fit_transform(temperatures)
+        else:
+            scaled_temps = self.scaler.transform(temperatures)
         
         # Create sequences
         X, y = [], []

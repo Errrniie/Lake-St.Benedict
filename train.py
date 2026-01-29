@@ -55,63 +55,88 @@ def main():
     EPOCHS = 50
     BATCH_SIZE = 32
     
-    # Load and prepare data
+    # Load data
     print("\n1. Loading data...")
     loader = LakeDataLoader(DATA_PATH)
-    loader.load_data()
-    print(f"   Loaded {len(loader.data)} days of temperature data")
+    data = loader.load_data()
+    print(f"   Loaded {len(data)} days of temperature data")
     
-    # Prepare sequences
-    print("\n2. Preparing sequences...")
-    X, y = loader.prepare_sequences(sequence_length=SEQUENCE_LENGTH)
-    print(f"   Created {len(X)} sequences")
-    print(f"   Sequence shape: {X.shape}")
+    # Split data before creating sequences to avoid data leakage
+    print("\n2. Splitting data...")
+    split_idx = int(len(data) * 0.8)
+    train_data = data.iloc[:split_idx].copy()
+    test_data = data.iloc[split_idx:].copy()
+    print(f"   Training data: {len(train_data)} days")
+    print(f"   Test data: {len(test_data)} days")
     
-    # Split data
-    print("\n3. Splitting data...")
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, shuffle=False
+    # Prepare training sequences
+    print("\n3. Preparing training sequences...")
+    train_loader = LakeDataLoader(DATA_PATH)
+    train_loader.data = train_data
+    X_train_full, y_train_full = train_loader.prepare_sequences(
+        sequence_length=SEQUENCE_LENGTH, fit_scaler=True
     )
-    print(f"   Training samples: {len(X_train)}")
-    print(f"   Test samples: {len(X_test)}")
+    print(f"   Created {len(X_train_full)} training sequences")
+    
+    # Prepare test sequences using the same scaler
+    print("\n4. Preparing test sequences...")
+    test_loader = LakeDataLoader(DATA_PATH)
+    test_loader.data = test_data
+    test_loader.scaler = train_loader.scaler  # Use training scaler
+    X_test, y_test = test_loader.prepare_sequences(
+        sequence_length=SEQUENCE_LENGTH, fit_scaler=False
+    )
+    print(f"   Created {len(X_test)} test sequences")
+    
+    # Split training data for validation
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_full, y_train_full, test_size=0.2, random_state=42, shuffle=False
+    )
     
     # Build and train model
-    print("\n4. Building model...")
+    print("\n5. Building model...")
     model = LakeTemperatureModel(sequence_length=SEQUENCE_LENGTH)
     model.build_model()
     print(f"   Model built with {model.model.count_params()} parameters")
     
-    print("\n5. Training model...")
+    print("\n6. Training model...")
     print("-" * 60)
-    history = model.train(
+    history = model.model.fit(
         X_train, y_train,
         epochs=EPOCHS,
         batch_size=BATCH_SIZE,
-        validation_split=0.2
+        validation_data=(X_val, y_val),
+        verbose=1
     )
     print("-" * 60)
     
     # Evaluate on test set
-    print("\n6. Evaluating on test set...")
+    print("\n7. Evaluating on test set...")
     test_loss, test_mae = model.model.evaluate(X_test, y_test, verbose=0)
     print(f"   Test Loss: {test_loss:.4f}")
     print(f"   Test MAE: {test_mae:.4f}")
     
     # Calculate temperature MAE in Celsius
     predictions = model.predict(X_test)
-    predictions_celsius = loader.inverse_transform(predictions)
-    y_test_celsius = loader.inverse_transform(y_test)
+    predictions_celsius = train_loader.inverse_transform(predictions)
+    y_test_celsius = train_loader.inverse_transform(y_test)
     celsius_mae = np.mean(np.abs(predictions_celsius - y_test_celsius))
     print(f"   Test MAE (°C): {celsius_mae:.2f}°C")
     
-    # Save model
-    print("\n7. Saving model...")
+    # Save model and scaler
+    print("\n8. Saving model and scaler...")
     os.makedirs('models', exist_ok=True)
     model.save_model(MODEL_SAVE_PATH)
+    # Save scaler for use during prediction
+    import pickle
+    with open('models/scaler.pkl', 'wb') as f:
+        pickle.dump(train_loader.scaler, f)
     print(f"   Model saved to {MODEL_SAVE_PATH}")
+    print(f"   Scaler saved to models/scaler.pkl")
     
     # Plot training history
-    print("\n8. Plotting training history...")
+    print("\n9. Plotting training history...")
+    os.makedirs('plots', exist_ok=True)
     plot_training_history(history)
     
     print("\n" + "=" * 60)

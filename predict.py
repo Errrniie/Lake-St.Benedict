@@ -49,11 +49,14 @@ def forecast_future(model, loader, last_sequence, days=7):
         model: Trained model
         loader: Data loader with fitted scaler
         last_sequence: Last sequence of temperatures
-        days: Number of days to forecast
+        days: Number of days to forecast (must be positive)
         
     Returns:
         Forecasted temperatures in Celsius
     """
+    if days <= 0:
+        raise ValueError("days must be a positive integer")
+    
     forecasts = []
     current_sequence = last_sequence.copy()
     
@@ -82,12 +85,19 @@ def main():
     # Configuration
     DATA_PATH = 'data/sample_data.csv'
     MODEL_PATH = 'models/lake_temp_model.h5'
+    SCALER_PATH = 'models/scaler.pkl'
     SEQUENCE_LENGTH = 30
     FORECAST_DAYS = 7
+    RECENT_DAYS = 60
     
     # Check if model exists
     if not os.path.exists(MODEL_PATH):
         print(f"\nError: Model not found at {MODEL_PATH}")
+        print("Please run train.py first to train the model.")
+        return
+    
+    if not os.path.exists(SCALER_PATH):
+        print(f"\nError: Scaler not found at {SCALER_PATH}")
         print("Please run train.py first to train the model.")
         return
     
@@ -97,9 +107,14 @@ def main():
     data = loader.load_data()
     print(f"   Loaded {len(data)} days of temperature data")
     
+    # Load the saved scaler
+    import pickle
+    with open(SCALER_PATH, 'rb') as f:
+        loader.scaler = pickle.load(f)
+    
     # Prepare sequences
     print("\n2. Preparing sequences...")
-    X, y = loader.prepare_sequences(sequence_length=SEQUENCE_LENGTH)
+    X, y = loader.prepare_sequences(sequence_length=SEQUENCE_LENGTH, fit_scaler=False)
     print(f"   Created {len(X)} sequences")
     
     # Load trained model
@@ -108,10 +123,15 @@ def main():
     model.load_model(MODEL_PATH)
     print(f"   Model loaded from {MODEL_PATH}")
     
-    # Make predictions on the last 60 days
-    print("\n4. Making predictions on recent data...")
-    recent_X = X[-60:]
-    recent_y = y[-60:]
+    # Validate we have enough data
+    if len(X) < RECENT_DAYS:
+        print(f"\n   Warning: Only {len(X)} sequences available, using all for predictions")
+        RECENT_DAYS = len(X)
+    
+    # Make predictions on the last RECENT_DAYS days
+    print(f"\n4. Making predictions on recent data (last {RECENT_DAYS} days)...")
+    recent_X = X[-RECENT_DAYS:]
+    recent_y = y[-RECENT_DAYS:]
     predictions = model.predict(recent_X)
     
     # Convert back to Celsius
@@ -123,7 +143,7 @@ def main():
     print(f"   Mean Absolute Error: {mae:.2f}°C")
     
     # Get dates for recent predictions
-    recent_dates = data['date'].iloc[-60:].values
+    recent_dates = data['date'].iloc[-RECENT_DAYS:].values
     
     # Forecast future temperatures
     print(f"\n5. Forecasting next {FORECAST_DAYS} days...")
@@ -142,6 +162,7 @@ def main():
     
     # Plot results
     print("\n6. Generating visualization...")
+    os.makedirs('plots', exist_ok=True)
     plot_predictions(
         recent_dates, 
         actual_celsius.flatten(), 

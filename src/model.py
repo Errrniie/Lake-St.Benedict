@@ -78,7 +78,7 @@ class LakeTemperatureModel:
         Returns:
             Predicted temperatures
         """
-        return self.model.predict(X)
+        return self.model.predict(X, verbose=0)
     
     def save_model(self, filepath):
         """Save the trained model."""

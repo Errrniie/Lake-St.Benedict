@@ -30,6 +30,7 @@ models/*.h5
 models/*.pkl
 
 # Data
+# Exclude all CSV files in data/ except sample_data.csv which is tracked for demonstration
 data/*.csv
 !data/sample_data.csv
 
