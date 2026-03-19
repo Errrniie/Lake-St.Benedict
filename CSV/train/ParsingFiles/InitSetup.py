@@ -2,13 +2,14 @@
 """
 InitSetup.py
 
-Unified data processing pipeline:
+Unified data processing pipeline (updated behavior):
 - Parse the DATE (or specified) column into datetimes
 - Add or fill `hour`, `minute`, `day_of_month`, `day_of_year`, `month`, `year` columns with actual values
-- Replace 0 values in the DO column with the literal string "NaN"
+- Drop any rows where the DO column is 0 (instead of converting to the string "NaN")
 - Create time-lagged columns for DO, Air temp, and Aerator (1h, 3h, 6h)
 
-Saves a new CSV (does not overwrite input by default) with literal 'NaN' for missing values.
+Saves a new processed CSV (does not overwrite input by default), using real NaNs
+internally rather than the literal string 'NaN'.
 """
 import argparse
 import os
@@ -102,13 +103,14 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
         else:
             df[col] = computed[col]
 
-    # Replace zeros in DO column with the literal string "NaN"
+    # Drop rows where DO is exactly zero (numeric 0 or string "0")
     do_col = find_do_column(df, do_col_name)
     if do_col:
         coerced = pd.to_numeric(df[do_col], errors='coerce')
         zero_mask = coerced == 0
         zero_mask = zero_mask | (df[do_col].astype(str).str.strip() == '0')
-        df.loc[zero_mask.fillna(False), do_col] = "NaN"
+        # keep only rows where DO is *not* zero
+        df = df[~zero_mask.fillna(False)]
 
     # Sort by date for lag operations
     df = df.sort_values(date_col)
@@ -139,18 +141,18 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
         # Update main df with lag columns
         df = df_for_lags
 
-    # after lags exist, remove rows where any of the lag columns contain NaN or the literal string
+    # after lags exist, remove rows where any of the lag columns contain NaN
     lag_prefixes = ("DO_T_", "AT_T_", "Aerator_T_")
     lag_cols = [c for c in df.columns if c.startswith(lag_prefixes)]
     if lag_cols:
         mask = pd.DataFrame(False, index=df.index, columns=lag_cols)
         for col in lag_cols:
-            mask[col] = df[col].isna() | (df[col].astype(str) == "NaN")
+            mask[col] = df[col].isna()
         df = df[~mask.any(axis=1)]
 
     # explicit requirement: drop rows where the 1‑hour DO lag is missing/NaN
     if 'DO_T_1' in df.columns:
-        df = df[~(df['DO_T_1'].isna() | (df['DO_T_1'].astype(str) == "NaN"))]
+        df = df[~df['DO_T_1'].isna()]
 
     # Determine output path
     if not output_path:
@@ -160,8 +162,8 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
     if os.path.abspath(output_path) == os.path.abspath(input_path):
         output_path = make_default_output_path(input_path)
 
-    # Save with literal 'NaN' for missing values
-    df.to_csv(output_path, index=False, na_rep="NaN")
+    # Save processed CSV; keep real NaNs in the file
+    df.to_csv(output_path, index=False)
     return output_path
 
 
