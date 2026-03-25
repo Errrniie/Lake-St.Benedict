@@ -4,7 +4,7 @@ InitSetup.py
 
 Unified data processing pipeline (updated behavior):
 - Parse the DATE (or specified) column into datetimes
-- Add or fill `hour`, `minute`, `day_of_month`, `day_of_year`, `month`, `year` columns with actual values
+- Add or fill `hour` column with actual values
 - Drop any rows where the DO column is 0 (instead of converting to the string "NaN")
 - Create time-lagged columns for DO, Air temp, and Aerator (1h, 3h, 6h)
 
@@ -89,11 +89,6 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
     # Compute datetime-derived components from the parsed date
     computed = pd.DataFrame(index=df.index)
     computed['hour'] = df[date_col].dt.hour
-    computed['minute'] = df[date_col].dt.minute
-    computed['day_of_month'] = df[date_col].dt.day
-    computed['day_of_year'] = df[date_col].dt.dayofyear
-    computed['month'] = df[date_col].dt.month
-    computed['year'] = df[date_col].dt.year
 
     # For each of these fields, fill missing or blank values using the computed values.
     for col in computed.columns:
@@ -120,12 +115,12 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
 
     # Create lag columns if DO and Air temp columns exist
     if do_col and 'Air temp C' in df_for_lags.columns:
-        df_for_lags = add_time_lag(df_for_lags, date_col, 1, do_col, "DO_T_1")
-        df_for_lags = add_time_lag(df_for_lags, date_col, 3, do_col, "DO_T_3")
-        df_for_lags = add_time_lag(df_for_lags, date_col, 6, do_col, "DO_T_6")
-        df_for_lags = add_time_lag(df_for_lags, date_col, 1, 'Air temp C', "AT_T_1")
-        df_for_lags = add_time_lag(df_for_lags, date_col, 3, 'Air temp C', "AT_T_3")
-        df_for_lags = add_time_lag(df_for_lags, date_col, 6, 'Air temp C', "AT_T_6")
+        df_for_lags = add_time_lag(df_for_lags, date_col, 1, do_col, "DO_TLAG_15")
+        df_for_lags = add_time_lag(df_for_lags, date_col, 3, do_col, "DO_TLAG_30")
+        df_for_lags = add_time_lag(df_for_lags, date_col, 6, do_col, "DO_TLAG_60")
+        df_for_lags = add_time_lag(df_for_lags, date_col, 1, 'Air temp C', "AT_TLAG_15")
+        df_for_lags = add_time_lag(df_for_lags, date_col, 3, 'Air temp C', "AT_TLAG_30")
+        df_for_lags = add_time_lag(df_for_lags, date_col, 6, 'Air temp C', "AT_TLAG_60")
         
         # Add aerator cumulative lags (minutes on) if Aerated column exists
         aerated_col = None
@@ -134,15 +129,15 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
                 aerated_col = c
                 break
         if aerated_col:
-            df_for_lags = add_aerator_cumulative_lag(df_for_lags, date_col, 1, aerated_col, "Aerator_T_1")
-            df_for_lags = add_aerator_cumulative_lag(df_for_lags, date_col, 3, aerated_col, "Aerator_T_3")
-            df_for_lags = add_aerator_cumulative_lag(df_for_lags, date_col, 6, aerated_col, "Aerator_T_6")
+            df_for_lags = add_aerator_cumulative_lag(df_for_lags, date_col, 1, aerated_col, "Aerator_TLAG_15")
+            df_for_lags = add_aerator_cumulative_lag(df_for_lags, date_col, 3, aerated_col, "Aerator_TLAG_30")
+            df_for_lags = add_aerator_cumulative_lag(df_for_lags, date_col, 6, aerated_col, "Aerator_TLAG_60")
         
         # Update main df with lag columns
         df = df_for_lags
 
     # after lags exist, remove rows where any of the lag columns contain NaN
-    lag_prefixes = ("DO_T_", "AT_T_", "Aerator_T_")
+    lag_prefixes = ("DO_TLAG_", "AT_TLAG_", "Aerator_TLAG_")
     lag_cols = [c for c in df.columns if c.startswith(lag_prefixes)]
     if lag_cols:
         mask = pd.DataFrame(False, index=df.index, columns=lag_cols)
@@ -151,8 +146,8 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
         df = df[~mask.any(axis=1)]
 
     # explicit requirement: drop rows where the 1‑hour DO lag is missing/NaN
-    if 'DO_T_1' in df.columns:
-        df = df[~df['DO_T_1'].isna()]
+    if 'DO_TLAG_15' in df.columns:
+        df = df[~df['DO_TLAG_15'].isna()]
 
     # Determine output path
     if not output_path:
@@ -160,9 +155,10 @@ def process_file(input_path, output_path=None, date_col_name=None, do_col_name=N
 
     # Avoid overwriting input file
     if os.path.abspath(output_path) == os.path.abspath(input_path):
-        output_path = make_default_output_path(input_path)
+        raise ValueError(
+            f'Refuse to overwrite input file. Choose a different output path. Input: {input_path}'
+        )
 
-    # Save processed CSV; keep real NaNs in the file
     df.to_csv(output_path, index=False)
     return output_path
 
