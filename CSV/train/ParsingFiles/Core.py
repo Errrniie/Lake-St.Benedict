@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from Module.Connector import run_connected_modules
+from Module.Connector import run_connected_modules, run_model_prediction, run_model_training
 from Module.DORate.dodeltas_module import DEFAULT_HORIZONS
 from Module.Parse.parse_module import make_default_output_path, read_csv, write_csv
 from gui_app import run_gui
@@ -64,6 +64,8 @@ def main() -> None:
             rc = run_gui(
                 run_controller_fn=run_controller,
                 default_output_fn=lambda p: make_default_output_path(p, suffix="_parsed_DOdeltas"),
+                run_model_training_fn=run_model_training,
+                run_model_prediction_fn=run_model_prediction,
             )
             if rc:
                 sys.exit(rc)

@@ -39,10 +39,14 @@ def find_do_column(df: pd.DataFrame, do_col_name: str | None = None) -> str | No
 
 def make_default_output_path(input_path: str, suffix: str = "_parsed_DOdeltas") -> str:
     base, ext = os.path.splitext(input_path)
+    if not ext:
+        ext = ".csv"
     return f"{base}{suffix}{ext}"
 
 
 def write_csv(df: pd.DataFrame, input_path: str, output_path: str) -> str:
+    if not output_path.lower().endswith(".csv"):
+        output_path = f"{output_path}.csv"
     if os.path.abspath(output_path) == os.path.abspath(input_path):
         raise ValueError(
             f"Refuse to overwrite input file. Choose a different output path. Input: {input_path}"

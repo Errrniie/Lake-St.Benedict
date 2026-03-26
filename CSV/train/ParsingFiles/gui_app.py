@@ -11,6 +11,8 @@ import pandas as pd
 def run_gui(
     run_controller_fn: Callable[..., str],
     default_output_fn: Callable[[str], str],
+    run_model_training_fn: Callable[..., dict],
+    run_model_prediction_fn: Callable[..., dict],
 ) -> int:
     from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
     from PySide6.QtGui import QColor
@@ -25,13 +27,16 @@ def run_gui(
         QMessageBox,
         QPushButton,
         QAbstractItemView,
+        QInputDialog,
         QStackedWidget,
         QTableView,
         QVBoxLayout,
         QWidget,
     )
+    from Module.Model.model_io import ensure_models_dir, load_bundle
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    models_dir = ensure_models_dir(os.path.join(os.path.dirname(__file__), "Module", "Model", "Models"))
 
     def list_csv_files(root: str) -> list[str]:
         out: list[str] = []
@@ -41,6 +46,15 @@ def run_gui(
             for name in filenames:
                 if name.lower().endswith(".csv"):
                     out.append(os.path.relpath(os.path.join(dirpath, name), root))
+        return sorted(out)
+
+    def list_model_files() -> list[str]:
+        if not os.path.isdir(models_dir):
+            return []
+        out: list[str] = []
+        for name in os.listdir(models_dir):
+            if name.lower().endswith(".pkl"):
+                out.append(name)
         return sorted(out)
 
     class CsvTableModel(QAbstractTableModel):
@@ -166,8 +180,14 @@ def run_gui(
             menu_layout = QHBoxLayout()
             self.btn_run_controller = QPushButton("Run Controller (Parse + Features)")
             self.btn_view_csv = QPushButton("View Current CSV Files")
+            self.btn_train_model = QPushButton("Train Model")
+            self.btn_run_prediction = QPushButton("Run Prediction")
+            self.btn_model_manager = QPushButton("Model Manager")
             menu_layout.addWidget(self.btn_run_controller)
             menu_layout.addWidget(self.btn_view_csv)
+            menu_layout.addWidget(self.btn_train_model)
+            menu_layout.addWidget(self.btn_run_prediction)
+            menu_layout.addWidget(self.btn_model_manager)
             root_layout.addLayout(menu_layout)
 
             self.pages = QStackedWidget()
@@ -198,15 +218,40 @@ def run_gui(
             csv_buttons.addWidget(self.btn_refresh_csv)
             csv_layout.addLayout(csv_buttons)
 
+            self.model_page = QWidget()
+            model_layout = QVBoxLayout(self.model_page)
+            model_info = QLabel("Saved models (Module/Model/Models/*.pkl):")
+            self.model_list = QListWidget()
+            self.model_list.setSelectionMode(QAbstractItemView.SingleSelection)
+            self.model_details = QLabel("Select a model to view details.")
+            self.model_details.setWordWrap(True)
+            self.btn_refresh_models = QPushButton("Refresh Models")
+            self.btn_delete_model = QPushButton("Delete Selected Model")
+            model_layout.addWidget(model_info)
+            model_layout.addWidget(self.model_list)
+            model_layout.addWidget(self.model_details)
+            model_buttons = QHBoxLayout()
+            model_buttons.addWidget(self.btn_delete_model)
+            model_buttons.addWidget(self.btn_refresh_models)
+            model_layout.addLayout(model_buttons)
+
             self.pages.addWidget(self.home_page)
             self.pages.addWidget(self.csv_page)
+            self.pages.addWidget(self.model_page)
 
             self.btn_run_controller.clicked.connect(self.run_controller_clicked)
             self.btn_view_csv.clicked.connect(self.show_csv_page)
+            self.btn_train_model.clicked.connect(self.train_model_clicked)
+            self.btn_run_prediction.clicked.connect(self.run_prediction_clicked)
+            self.btn_model_manager.clicked.connect(self.show_model_page)
             self.btn_refresh_csv.clicked.connect(self.populate_csv_list)
             self.btn_open_selected_csv.clicked.connect(self.open_selected_csv)
+            self.btn_refresh_models.clicked.connect(self.populate_model_list)
+            self.btn_delete_model.clicked.connect(self.delete_selected_model)
+            self.model_list.currentItemChanged.connect(self.show_model_details)
 
             self.populate_csv_list()
+            self.populate_model_list()
             self.pages.setCurrentWidget(self.home_page)
 
         def populate_csv_list(self) -> None:
@@ -243,6 +288,84 @@ def run_gui(
             self.populate_csv_list()
             self.pages.setCurrentWidget(self.csv_page)
 
+        def populate_model_list(self) -> None:
+            self.model_list.clear()
+            models = list_model_files()
+            if not models:
+                self.model_list.addItem("(No model files found)")
+                self.model_details.setText("No model bundles in Module/Model/Models yet.")
+                return
+            for name in models:
+                item = QListWidgetItem(name)
+                item.setData(Qt.UserRole, name)
+                item.setToolTip(os.path.join(models_dir, name))
+                self.model_list.addItem(item)
+            self.model_details.setText("Select a model to view details.")
+
+        def show_model_page(self) -> None:
+            self.populate_model_list()
+            self.pages.setCurrentWidget(self.model_page)
+
+        def show_model_details(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+            if not current:
+                self.model_details.setText("Select a model to view details.")
+                return
+            name = current.data(Qt.UserRole)
+            if not name:
+                self.model_details.setText("Select a model to view details.")
+                return
+            model_path = os.path.join(models_dir, str(name))
+            try:
+                bundle = load_bundle(model_path)
+                target = bundle.get("target_col", "unknown")
+                mae = bundle.get("mae", "n/a")
+                train_rows = bundle.get("train_rows", "n/a")
+                test_rows = bundle.get("test_rows", "n/a")
+                feat_count = len(bundle.get("feature_cols", []))
+                self.model_details.setText(
+                    f"Model: {os.path.basename(model_path)}\n"
+                    f"Target: {target}\n"
+                    f"MAE: {mae}\n"
+                    f"Features: {feat_count}\n"
+                    f"Train rows: {train_rows} | Test rows: {test_rows}\n"
+                    f"Path: {model_path}"
+                )
+            except Exception as exc:
+                self.model_details.setText(f"Failed to read model metadata:\n{exc}")
+
+        def delete_selected_model(self) -> None:
+            item = self.model_list.currentItem()
+            if not item:
+                QMessageBox.information(self, "No Selection", "Select a model first.")
+                return
+            name = item.data(Qt.UserRole)
+            if not name:
+                return
+            model_path = os.path.join(models_dir, str(name))
+            if not os.path.isfile(model_path):
+                QMessageBox.warning(self, "Missing File", f"Model not found:\n{model_path}")
+                self.populate_model_list()
+                return
+
+            confirm = QMessageBox.question(
+                self,
+                "Delete Model?",
+                f"Delete model file?\n{model_path}",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if confirm != QMessageBox.Yes:
+                return
+
+            try:
+                os.remove(model_path)
+            except Exception as exc:
+                QMessageBox.critical(self, "Delete Error", str(exc))
+                return
+
+            QMessageBox.information(self, "Deleted", f"Removed:\n{model_path}")
+            self.populate_model_list()
+
         def run_controller_clicked(self) -> None:
             input_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -262,6 +385,8 @@ def run_gui(
             )
             if not output_path:
                 return
+            if not output_path.lower().endswith(".csv"):
+                output_path = f"{output_path}.csv"
 
             try:
                 out_path = run_controller_fn(input_path=input_path, output_path=output_path)
@@ -273,6 +398,136 @@ def run_gui(
                 self,
                 "Controller Complete",
                 f"Processed file saved to:\n{out_path}",
+            )
+
+        def train_model_clicked(self) -> None:
+            input_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Choose Training CSV",
+                repo_root,
+                "CSV Files (*.csv);;All Files (*)",
+            )
+            if not input_path:
+                return
+
+            try:
+                frame = pd.read_csv(input_path, nrows=5)
+            except Exception as exc:
+                QMessageBox.critical(self, "CSV Read Error", str(exc))
+                return
+            target_candidates = [c for c in frame.columns if str(c).startswith("DO_delta_")]
+            if not target_candidates:
+                QMessageBox.warning(
+                    self,
+                    "No Targets Found",
+                    "No DO_delta_* columns found in selected CSV.",
+                )
+                return
+
+            target_col, ok = QInputDialog.getItem(
+                self,
+                "Select Target",
+                "Choose DO_delta target column:",
+                target_candidates,
+                0,
+                False,
+            )
+            if not ok or not target_col:
+                return
+
+            include_other = QMessageBox.question(
+                self,
+                "Use Other Delta Features?",
+                "Include other DO_delta_* columns as input features?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            ) == QMessageBox.Yes
+
+            default_model_path = os.path.join(
+                models_dir,
+                f"model_{target_col}.pkl",
+            )
+            model_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Model Bundle As",
+                default_model_path,
+                "Pickle Files (*.pkl);;All Files (*)",
+            )
+            if not model_path:
+                return
+            if not model_path.lower().endswith(".pkl"):
+                model_path = f"{model_path}.pkl"
+
+            try:
+                result = run_model_training_fn(
+                    csv_path=input_path,
+                    target_col=target_col,
+                    model_output_path=model_path,
+                    include_other_delta_features=include_other,
+                )
+            except Exception as exc:
+                QMessageBox.critical(self, "Training Error", str(exc))
+                return
+
+            QMessageBox.information(
+                self,
+                "Training Complete",
+                "Model saved.\n\n"
+                f"Target: {result['target_col']}\n"
+                f"MAE: {result['mae']:.6f}\n"
+                f"Train rows: {result['train_rows']}\n"
+                f"Test rows: {result['test_rows']}\n"
+                f"Path: {result['model_path']}",
+            )
+
+        def run_prediction_clicked(self) -> None:
+            model_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Choose Trained Model Bundle",
+                models_dir,
+                "Pickle Files (*.pkl);;All Files (*)",
+            )
+            if not model_path:
+                return
+
+            input_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Choose Input CSV for Prediction",
+                repo_root,
+                "CSV Files (*.csv);;All Files (*)",
+            )
+            if not input_path:
+                return
+
+            base, ext = os.path.splitext(input_path)
+            default_pred = f"{base}_predictions{ext or '.csv'}"
+            output_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Prediction CSV As",
+                default_pred,
+                "CSV Files (*.csv);;All Files (*)",
+            )
+            if not output_path:
+                return
+            if not output_path.lower().endswith(".csv"):
+                output_path = f"{output_path}.csv"
+
+            try:
+                result = run_model_prediction_fn(
+                    model_path=model_path,
+                    input_csv_path=input_path,
+                    output_csv_path=output_path,
+                )
+            except Exception as exc:
+                QMessageBox.critical(self, "Prediction Error", str(exc))
+                return
+
+            QMessageBox.information(
+                self,
+                "Prediction Complete",
+                f"Rows predicted: {result['rows']}\n"
+                f"Prediction column: {result['prediction_column']}\n"
+                f"Saved to: {result['output_path']}",
             )
 
         def open_selected_csv(self) -> None:

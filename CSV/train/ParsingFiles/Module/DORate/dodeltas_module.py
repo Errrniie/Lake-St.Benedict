@@ -54,9 +54,11 @@ def apply_nan_string(
     horizons: tuple[int, ...] = DEFAULT_HORIZONS,
     na_string: str = "NaN",
 ) -> pd.DataFrame:
+    # Keep real NaN values for ML-ready numeric columns.
+    # `na_string` is intentionally ignored for this modular pipeline path.
     out = df.copy()
     for col in [f"DO_delta_{h}h" for h in horizons]:
         if col in out.columns:
-            out[col] = out[col].apply(lambda v: na_string if pd.isna(v) else v)
+            out[col] = pd.to_numeric(out[col], errors="coerce")
     return out
 
