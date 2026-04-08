@@ -102,38 +102,107 @@ def simulate(
     return out
 
 
+def _contiguous_true_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """Half-open [start, end) index ranges where mask is True consecutively."""
+    mask = np.asarray(mask, dtype=bool)
+    runs: list[tuple[int, int]] = []
+    i, n = 0, len(mask)
+    while i < n:
+        if not mask[i]:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and mask[j]:
+            j += 1
+        runs.append((i, j))
+        i = j
+    return runs
+
+
+def _plot_segments(
+    ax,
+    x: np.ndarray,
+    y: np.ndarray,
+    mask: np.ndarray,
+    *,
+    color: str,
+    label: str,
+    linewidth: float = 1.15,
+    zorder: int = 2,
+) -> None:
+    """Plot only within contiguous True runs so lines do not bridge gaps."""
+    for k, (s, e) in enumerate(_contiguous_true_runs(mask)):
+        lbl = label if k == 0 else None
+        ax.plot(
+            x[s:e],
+            y[s:e],
+            color=color,
+            linewidth=linewidth,
+            label=lbl,
+            zorder=zorder,
+            solid_capstyle="round",
+            solid_joinstyle="round",
+        )
+
+
 def plot_result(df: pd.DataFrame, title: str, out_png: str) -> None:
     dt = pd.to_datetime(df["DATE"], errors="coerce")
     y = pd.to_numeric(df["simulated_DO"], errors="coerce").to_numpy()
     aer = df["aerator_on"].astype(bool).to_numpy()
-    idx = np.arange(len(df))
+    idx = np.arange(len(df), dtype=float)
+
+    # Aerator: deep coral (not yellow/orange tab); reads clearly vs blue
+    color_aer = "#C73E1D"
+    color_off = "#1f77b4"
 
     fig, axes = plt.subplots(2, 1, figsize=(11, 7))
 
-    # Top: index, color by aerator
     ax = axes[0]
-    if np.any(~aer):
-        ax.plot(idx[~aer], y[~aer], color="tab:blue", linewidth=0.9, label="Aerator off (delta)")
-    if np.any(aer):
-        ax.plot(idx[aer], y[aer], color="tab:orange", linewidth=0.9, label="Aerator on (+0.5/h)")
-    ax.axhline(3.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.7, label="DO = 3")
+    _plot_segments(
+        ax,
+        idx,
+        y,
+        ~aer,
+        color=color_off,
+        label="Aerator off (delta)",
+        zorder=1,
+    )
+    _plot_segments(
+        ax,
+        idx,
+        y,
+        aer,
+        color=color_aer,
+        label="Aerator on (+0.5/h)",
+        linewidth=1.35,
+        zorder=3,
+    )
+    ax.axhline(3.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.65, label="DO = 3", zorder=0)
     ax.set_xlabel("Row index")
     ax.set_ylabel("Simulated DO")
     ax.set_title(title)
     ax.legend(loc="upper right", fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True, alpha=0.28)
 
     ax = axes[1]
-    if np.any(~aer):
-        ax.plot(dt[~aer], y[~aer], color="tab:blue", linewidth=0.9, label="Aerator off")
-    if np.any(aer):
-        ax.plot(dt[aer], y[aer], color="tab:orange", linewidth=0.9, label="Aerator on")
-    ax.axhline(3.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.7)
+    xdt = dt.to_numpy()
+    _plot_segments(ax, xdt, y, ~aer, color=color_off, label="Aerator off", zorder=1)
+    _plot_segments(
+        ax,
+        xdt,
+        y,
+        aer,
+        color=color_aer,
+        label="Aerator on",
+        linewidth=1.35,
+        zorder=3,
+    )
+    ax.axhline(3.0, color="gray", linestyle="--", linewidth=0.8, alpha=0.65, zorder=0)
     ax.set_xlabel("DATE")
     ax.set_ylabel("Simulated DO")
-    ax.set_title("Simulated DO vs time (orange = aerator)")
+    ax.set_title("Simulated DO vs time (red = aerator on)")
     ax.legend(loc="upper right", fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax.grid(True, alpha=0.28)
     plt.setp(ax.xaxis.get_majorticklabels(), rotation=22, ha="right")
 
     fig.tight_layout()
