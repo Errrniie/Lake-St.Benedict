@@ -5,6 +5,7 @@ import os
 import pandas as pd
 
 from Module.Model.model_io import load_bundle
+from Module.Model.prediction_plot import save_prediction_plot
 
 
 def predict_from_model_bundle(
@@ -26,6 +27,21 @@ def predict_from_model_bundle(
     df = pd.read_csv(input_csv_path)
     df.columns = df.columns.str.strip()
 
+    feature_mode = bundle.get("feature_mode")
+    calendar = ("year", "month", "day", "dayofyear")
+    if feature_mode == "pure_weather" or any(c in feature_cols for c in calendar):
+        if "DATE" not in df.columns:
+            raise ValueError("Input CSV must contain DATE for calendar features.")
+        dt = pd.to_datetime(df["DATE"], errors="coerce")
+        if "year" in feature_cols:
+            df["year"] = dt.dt.year
+        if "month" in feature_cols:
+            df["month"] = dt.dt.month
+        if "day" in feature_cols:
+            df["day"] = dt.dt.day
+        if "dayofyear" in feature_cols:
+            df["dayofyear"] = dt.dt.dayofyear
+
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
         raise ValueError(f"Input CSV missing required feature columns: {missing}")
@@ -36,16 +52,29 @@ def predict_from_model_bundle(
     X = X.fillna(medians)
 
     preds = model.predict(X)
-    pred_col = f"pred_{target_col}"
+    q_label = bundle.get("quantile_label")
+    if isinstance(q_label, str) and q_label:
+        pred_col = f"pred_{target_col}_quantile_{q_label}"
+    else:
+        pred_col = f"pred_{target_col}"
     df[pred_col] = preds
 
     if not output_csv_path.lower().endswith(".csv"):
         output_csv_path = f"{output_csv_path}.csv"
     df.to_csv(output_csv_path, index=False)
 
+    plot_path = save_prediction_plot(
+        output_csv_path,
+        df,
+        pred_col,
+        date_col="DATE",
+        title=os.path.basename(output_csv_path),
+    )
+
     return {
         "output_path": output_csv_path,
         "prediction_column": pred_col,
         "rows": int(len(df)),
+        "plot_path": plot_path,
     }
 

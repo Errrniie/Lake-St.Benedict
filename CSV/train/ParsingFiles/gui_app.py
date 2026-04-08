@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import colorsys
 import os
+import re
 from typing import Callable
 
 import pandas as pd
@@ -11,6 +12,9 @@ import pandas as pd
 def run_gui(
     run_controller_fn: Callable[..., str],
     default_output_fn: Callable[[str], str],
+    run_weather_fn: Callable[..., str],
+    default_weather_output_fn: Callable[[str], str],
+    run_weather_yearly_fn: Callable[..., dict],
     run_model_training_fn: Callable[..., dict],
     run_model_prediction_fn: Callable[..., dict],
 ) -> int:
@@ -36,7 +40,12 @@ def run_gui(
     from Module.Model.model_io import ensure_models_dir, load_bundle
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    models_dir = ensure_models_dir(os.path.join(os.path.dirname(__file__), "Module", "Model", "Models"))
+    # PureWeather bundles: PURE WEATHER/Models/ (copy of Module/Model/Models + new saves)
+    models_dir = ensure_models_dir(os.path.join(repo_root, "PURE WEATHER", "Models"))
+    parsed_weather_predictions_dir = os.path.join(
+        repo_root, "PURE WEATHER", "ParsedWeatherData", "predictions"
+    )
+    os.makedirs(parsed_weather_predictions_dir, exist_ok=True)
 
     def list_csv_files(root: str) -> list[str]:
         out: list[str] = []
@@ -179,11 +188,15 @@ def run_gui(
 
             menu_layout = QHBoxLayout()
             self.btn_run_controller = QPushButton("Run Controller (Parse + Features)")
+            self.btn_run_weather = QPushButton("Weather Pipeline (column filter)")
+            self.btn_run_weather_yearly = QPushButton("Weather Yearly Analytics")
             self.btn_view_csv = QPushButton("View Current CSV Files")
             self.btn_train_model = QPushButton("Train Model")
             self.btn_run_prediction = QPushButton("Run Prediction")
             self.btn_model_manager = QPushButton("Model Manager")
             menu_layout.addWidget(self.btn_run_controller)
+            menu_layout.addWidget(self.btn_run_weather)
+            menu_layout.addWidget(self.btn_run_weather_yearly)
             menu_layout.addWidget(self.btn_view_csv)
             menu_layout.addWidget(self.btn_train_model)
             menu_layout.addWidget(self.btn_run_prediction)
@@ -197,7 +210,10 @@ def run_gui(
             home_layout = QVBoxLayout(self.home_page)
             home_label = QLabel(
                 "Choose an option above.\n\n"
-                "Run Controller: choose an input CSV and produce the processed output.\n"
+                "Run Controller: lake CSV — parse, lags, DO deltas.\n"
+                "Weather Pipeline: raw weather CSV — four columns saved as DATE, Air temp C, RH %, pressure (default save: *_parsed.csv).\n"
+                "Weather Yearly Analytics: parsed weather CSV — writes Largest_Temp_Summer, Largest_Humidity_Summer, Average_Year.\n"
+                "Train Model / Run Prediction / Model Manager: models live in PURE WEATHER/Models.\n"
                 "View Current CSV Files: list CSV files found in this project."
             )
             home_label.setWordWrap(True)
@@ -220,7 +236,7 @@ def run_gui(
 
             self.model_page = QWidget()
             model_layout = QVBoxLayout(self.model_page)
-            model_info = QLabel("Saved models (Module/Model/Models/*.pkl):")
+            model_info = QLabel("Saved models (PURE WEATHER/Models/*.pkl):")
             self.model_list = QListWidget()
             self.model_list.setSelectionMode(QAbstractItemView.SingleSelection)
             self.model_details = QLabel("Select a model to view details.")
@@ -240,6 +256,8 @@ def run_gui(
             self.pages.addWidget(self.model_page)
 
             self.btn_run_controller.clicked.connect(self.run_controller_clicked)
+            self.btn_run_weather.clicked.connect(self.run_weather_clicked)
+            self.btn_run_weather_yearly.clicked.connect(self.run_weather_yearly_clicked)
             self.btn_view_csv.clicked.connect(self.show_csv_page)
             self.btn_train_model.clicked.connect(self.train_model_clicked)
             self.btn_run_prediction.clicked.connect(self.run_prediction_clicked)
@@ -293,7 +311,7 @@ def run_gui(
             models = list_model_files()
             if not models:
                 self.model_list.addItem("(No model files found)")
-                self.model_details.setText("No model bundles in Module/Model/Models yet.")
+                self.model_details.setText("No model bundles in PURE WEATHER/Models yet.")
                 return
             for name in models:
                 item = QListWidgetItem(name)
@@ -319,15 +337,23 @@ def run_gui(
                 bundle = load_bundle(model_path)
                 target = bundle.get("target_col", "unknown")
                 mae = bundle.get("mae", "n/a")
+                mae_val = bundle.get("mae_validation", "n/a")
+                q_lab = bundle.get("quantile_label", "n/a")
+                q_alpha = bundle.get("quantile_alpha", "n/a")
+                fmode = bundle.get("feature_mode", "n/a")
                 train_rows = bundle.get("train_rows", "n/a")
+                val_rows = bundle.get("validation_rows", "n/a")
                 test_rows = bundle.get("test_rows", "n/a")
                 feat_count = len(bundle.get("feature_cols", []))
                 self.model_details.setText(
                     f"Model: {os.path.basename(model_path)}\n"
                     f"Target: {target}\n"
-                    f"MAE: {mae}\n"
+                    f"Feature mode: {fmode}\n"
+                    f"Quantile: {q_lab} (alpha={q_alpha})\n"
+                    f"MAE (test): {mae}\n"
+                    f"MAE (validation): {mae_val}\n"
                     f"Features: {feat_count}\n"
-                    f"Train rows: {train_rows} | Test rows: {test_rows}\n"
+                    f"Train rows: {train_rows} | Val rows: {val_rows} | Test rows: {test_rows}\n"
                     f"Path: {model_path}"
                 )
             except Exception as exc:
@@ -336,25 +362,13 @@ def run_gui(
         def delete_selected_model(self) -> None:
             item = self.model_list.currentItem()
             if not item:
-                QMessageBox.information(self, "No Selection", "Select a model first.")
                 return
             name = item.data(Qt.UserRole)
             if not name:
                 return
             model_path = os.path.join(models_dir, str(name))
             if not os.path.isfile(model_path):
-                QMessageBox.warning(self, "Missing File", f"Model not found:\n{model_path}")
                 self.populate_model_list()
-                return
-
-            confirm = QMessageBox.question(
-                self,
-                "Delete Model?",
-                f"Delete model file?\n{model_path}",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if confirm != QMessageBox.Yes:
                 return
 
             try:
@@ -363,7 +377,6 @@ def run_gui(
                 QMessageBox.critical(self, "Delete Error", str(exc))
                 return
 
-            QMessageBox.information(self, "Deleted", f"Removed:\n{model_path}")
             self.populate_model_list()
 
         def run_controller_clicked(self) -> None:
@@ -400,6 +413,74 @@ def run_gui(
                 f"Processed file saved to:\n{out_path}",
             )
 
+        def run_weather_clicked(self) -> None:
+            input_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Choose Weather Input CSV",
+                repo_root,
+                "CSV Files (*.csv);;All Files (*)",
+            )
+            if not input_path:
+                return
+
+            default_out = default_weather_output_fn(input_path)
+            output_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Weather Core CSV As",
+                default_out,
+                "CSV Files (*.csv);;All Files (*)",
+            )
+            if not output_path:
+                return
+            if not output_path.lower().endswith(".csv"):
+                output_path = f"{output_path}.csv"
+
+            try:
+                out_path = run_weather_fn(input_path=input_path, output_path=output_path)
+            except Exception as exc:
+                QMessageBox.critical(self, "Weather Pipeline Error", str(exc))
+                return
+
+            QMessageBox.information(
+                self,
+                "Weather Pipeline Complete",
+                "Columns: DATE, Air temp C, Relative Humidity (%), Atmospheric Pressure (mb), hour.\n"
+                "Pressure rows containing 'm' removed; DATE rounded up to the hour; hour from DATE.\n"
+                f"Saved to:\n{out_path}",
+            )
+
+        def run_weather_yearly_clicked(self) -> None:
+            input_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Choose Parsed Weather CSV",
+                repo_root,
+                "CSV Files (*.csv);;All Files (*)",
+            )
+            if not input_path:
+                return
+
+            default_dir = os.path.dirname(input_path) or repo_root
+            output_dir = QFileDialog.getExistingDirectory(
+                self,
+                "Choose folder for Largest_Temp_Summer.csv, Largest_Humidity_Summer.csv, Average_Year.csv",
+                default_dir,
+            )
+            if not output_dir:
+                return
+
+            try:
+                paths = run_weather_yearly_fn(input_path=input_path, output_dir=output_dir)
+            except Exception as exc:
+                QMessageBox.critical(self, "Weather Yearly Analytics Error", str(exc))
+                return
+
+            lines = "\n".join(f"{k}: {p}" for k, p in paths.items())
+            QMessageBox.information(
+                self,
+                "Weather Yearly Analytics Complete",
+                f"Wrote three files:\n\n{lines}",
+            )
+
         def train_model_clicked(self) -> None:
             input_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -415,19 +496,26 @@ def run_gui(
             except Exception as exc:
                 QMessageBox.critical(self, "CSV Read Error", str(exc))
                 return
-            target_candidates = [c for c in frame.columns if str(c).startswith("DO_delta_")]
+            cols = [str(c).strip() for c in frame.columns]
+            target_candidates: list[str] = []
+            if "DO" in cols:
+                target_candidates.append("DO")
+            target_candidates.extend(sorted(c for c in cols if c.startswith("DO_delta_")))
+            target_candidates.extend(
+                sorted(c for c in cols if re.fullmatch(r"DO_\d+h", str(c).strip()))
+            )
             if not target_candidates:
                 QMessageBox.warning(
                     self,
                     "No Targets Found",
-                    "No DO_delta_* columns found in selected CSV.",
+                    "CSV needs a DO column and/or DO_delta_* and/or DO_*h (future level) columns.",
                 )
                 return
 
             target_col, ok = QInputDialog.getItem(
                 self,
                 "Select Target",
-                "Choose DO_delta target column:",
+                "Train one model per run: choose DO, a single DO_delta_*, or DO_*h:",
                 target_candidates,
                 0,
                 False,
@@ -435,17 +523,20 @@ def run_gui(
             if not ok or not target_col:
                 return
 
-            include_other = QMessageBox.question(
+            quantile_tier, ok_q = QInputDialog.getItem(
                 self,
-                "Use Other Delta Features?",
-                "Include other DO_delta_* columns as input features?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
-            ) == QMessageBox.Yes
+                "Quantile band",
+                "Train low / mid (median) / high quantile model?",
+                ["mid", "low", "high"],
+                0,
+                False,
+            )
+            if not ok_q or not quantile_tier:
+                return
 
             default_model_path = os.path.join(
                 models_dir,
-                f"model_{target_col}.pkl",
+                f"model_{target_col}_quantile_{quantile_tier}.pkl",
             )
             model_path, _ = QFileDialog.getSaveFileName(
                 self,
@@ -463,7 +554,8 @@ def run_gui(
                     csv_path=input_path,
                     target_col=target_col,
                     model_output_path=model_path,
-                    include_other_delta_features=include_other,
+                    include_other_delta_features=False,
+                    quantile=str(quantile_tier),
                 )
             except Exception as exc:
                 QMessageBox.critical(self, "Training Error", str(exc))
@@ -474,8 +566,11 @@ def run_gui(
                 "Training Complete",
                 "Model saved.\n\n"
                 f"Target: {result['target_col']}\n"
-                f"MAE: {result['mae']:.6f}\n"
+                f"Quantile: {result.get('quantile_label', '?')} (alpha={result.get('quantile_alpha', '?')})\n"
+                f"MAE (test): {result['mae']:.6f}\n"
+                f"MAE (validation): {result['mae_validation']:.6f}\n"
                 f"Train rows: {result['train_rows']}\n"
+                f"Validation rows: {result['validation_rows']}\n"
                 f"Test rows: {result['test_rows']}\n"
                 f"Path: {result['model_path']}",
             )
@@ -499,8 +594,11 @@ def run_gui(
             if not input_path:
                 return
 
-            base, ext = os.path.splitext(input_path)
-            default_pred = f"{base}_predictions{ext or '.csv'}"
+            in_base = os.path.splitext(os.path.basename(input_path))[0]
+            default_pred = os.path.join(
+                parsed_weather_predictions_dir,
+                f"{in_base}_predictions.csv",
+            )
             output_path, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save Prediction CSV As",
@@ -522,12 +620,17 @@ def run_gui(
                 QMessageBox.critical(self, "Prediction Error", str(exc))
                 return
 
+            plot_note = ""
+            pp = result.get("plot_path")
+            if pp:
+                plot_note = f"\nPlot: {pp}"
+
             QMessageBox.information(
                 self,
                 "Prediction Complete",
                 f"Rows predicted: {result['rows']}\n"
                 f"Prediction column: {result['prediction_column']}\n"
-                f"Saved to: {result['output_path']}",
+                f"Saved to: {result['output_path']}{plot_note}",
             )
 
         def open_selected_csv(self) -> None:

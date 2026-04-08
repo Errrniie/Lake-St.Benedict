@@ -4,9 +4,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-from Module.Connector import run_connected_modules, run_model_prediction, run_model_training
+from Module.Connector import (
+    run_connected_modules,
+    run_model_prediction,
+    run_model_training,
+    run_weather_yearly_analytics,
+)
 from Module.DORate.dodeltas_module import DEFAULT_HORIZONS
 from Module.Parse.parse_module import make_default_output_path, read_csv, write_csv
+from Module.Weather.weather_init_module import process_weather_file
 from gui_app import run_gui
 
 
@@ -32,6 +38,14 @@ def run_controller(
     return write_csv(out_df, input_path=input_path, output_path=output_path)
 
 
+def run_weather_pipeline(
+    input_path: str,
+    output_path: str | None = None,
+) -> str:
+    """Weather pipeline: four columns + drop bad pressure rows, DATE ceiled to hour, hour column."""
+    return process_weather_file(input_path, output_path=output_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Core controller: parse, clean, lag features, and DO deltas in one run."
@@ -55,6 +69,22 @@ def main() -> None:
         default="NaN",
         help='String written for missing DO deltas (default: "NaN")',
     )
+    parser.add_argument(
+        "--weather",
+        action="store_true",
+        help="Run weather pipeline (DATE, Air temp C, RH %, pressure) instead of lake controller",
+    )
+    parser.add_argument(
+        "--weather-yearly",
+        action="store_true",
+        help="Run weather yearly analytics (three CSVs: largest JJA temp/RH years + average year)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        "-D",
+        default=None,
+        help="For --weather-yearly: folder for output CSVs (default: same folder as input)",
+    )
 
     args = parser.parse_args()
 
@@ -64,6 +94,9 @@ def main() -> None:
             rc = run_gui(
                 run_controller_fn=run_controller,
                 default_output_fn=lambda p: make_default_output_path(p, suffix="_parsed_DOdeltas"),
+                run_weather_fn=run_weather_pipeline,
+                default_weather_output_fn=lambda p: make_default_output_path(p, suffix="_parsed"),
+                run_weather_yearly_fn=run_weather_yearly_analytics,
                 run_model_training_fn=run_model_training,
                 run_model_prediction_fn=run_model_prediction,
             )
@@ -97,15 +130,23 @@ def main() -> None:
         horizons = tuple(int(x.strip()) for x in args.horizons.split(",") if x.strip())
 
     try:
-        out = run_controller(
-            input_path=input_path,
-            output_path=args.output,
-            date_col=args.date_col,
-            do_col=args.do_col,
-            horizons=horizons,
-            na_string=args.na_string,
-        )
-        print(f"Processed file saved to: {out}")
+        if args.weather_yearly:
+            paths = run_weather_yearly_analytics(input_path=input_path, output_dir=args.output_dir)
+            for key, path in paths.items():
+                print(f"{key}: {path}")
+        elif args.weather:
+            out = run_weather_pipeline(input_path=input_path, output_path=args.output)
+            print(f"Processed file saved to: {out}")
+        else:
+            out = run_controller(
+                input_path=input_path,
+                output_path=args.output,
+                date_col=args.date_col,
+                do_col=args.do_col,
+                horizons=horizons,
+                na_string=args.na_string,
+            )
+            print(f"Processed file saved to: {out}")
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

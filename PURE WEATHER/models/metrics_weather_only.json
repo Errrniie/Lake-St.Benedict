@@ -1,0 +1,137 @@
+{
+  "csv": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/DO_lakedata_parsed.csv",
+  "features": [
+    "Air temp C",
+    "Relative Humidity (%)",
+    "Atmospheric Pressure (mb)",
+    "hour",
+    "year",
+    "month",
+    "day",
+    "dayofyear"
+  ],
+  "targets_trained": [
+    "DO",
+    "DO_delta_1h",
+    "DO_delta_3h",
+    "DO_delta_6h",
+    "DO_delta_12h",
+    "DO_delta_24h"
+  ],
+  "results": [
+    {
+      "target": "DO",
+      "mae_test": 3.576934074973626,
+      "mae_validation": 1.283859802139977,
+      "train_rows": 6450,
+      "validation_rows": 837,
+      "test_rows": 1332,
+      "feature_cols": [
+        "Air temp C",
+        "Relative Humidity (%)",
+        "Atmospheric Pressure (mb)",
+        "hour",
+        "year",
+        "month",
+        "day",
+        "dayofyear"
+      ],
+      "model_path": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/models/model_weather_only_DO_mid.pkl"
+    },
+    {
+      "target": "DO_delta_1h",
+      "mae_test": 0.3526353888454919,
+      "mae_validation": 0.38731890137804337,
+      "train_rows": 6444,
+      "validation_rows": 837,
+      "test_rows": 1332,
+      "feature_cols": [
+        "Air temp C",
+        "Relative Humidity (%)",
+        "Atmospheric Pressure (mb)",
+        "hour",
+        "year",
+        "month",
+        "day",
+        "dayofyear"
+      ],
+      "model_path": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/models/model_weather_only_DO_delta_1h_mid.pkl"
+    },
+    {
+      "target": "DO_delta_3h",
+      "mae_test": 0.5367995419326369,
+      "mae_validation": 0.5537299384576105,
+      "train_rows": 6433,
+      "validation_rows": 837,
+      "test_rows": 1332,
+      "feature_cols": [
+        "Air temp C",
+        "Relative Humidity (%)",
+        "Atmospheric Pressure (mb)",
+        "hour",
+        "year",
+        "month",
+        "day",
+        "dayofyear"
+      ],
+      "model_path": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/models/model_weather_only_DO_delta_3h_mid.pkl"
+    },
+    {
+      "target": "DO_delta_6h",
+      "mae_test": 0.7435427189394537,
+      "mae_validation": 0.7093913166411389,
+      "train_rows": 6433,
+      "validation_rows": 837,
+      "test_rows": 1332,
+      "feature_cols": [
+        "Air temp C",
+        "Relative Humidity (%)",
+        "Atmospheric Pressure (mb)",
+        "hour",
+        "year",
+        "month",
+        "day",
+        "dayofyear"
+      ],
+      "model_path": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/models/model_weather_only_DO_delta_6h_mid.pkl"
+    },
+    {
+      "target": "DO_delta_12h",
+      "mae_test": 0.9468523843891637,
+      "mae_validation": 0.7985797588131863,
+      "train_rows": 6433,
+      "validation_rows": 837,
+      "test_rows": 1332,
+      "feature_cols": [
+        "Air temp C",
+        "Relative Humidity (%)",
+        "Atmospheric Pressure (mb)",
+        "hour",
+        "year",
+        "month",
+        "day",
+        "dayofyear"
+      ],
+      "model_path": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/models/model_weather_only_DO_delta_12h_mid.pkl"
+    },
+    {
+      "target": "DO_delta_24h",
+      "mae_test": 0.9495397896215587,
+      "mae_validation": 0.7916774194884328,
+      "train_rows": 6431,
+      "validation_rows": 837,
+      "test_rows": 1332,
+      "feature_cols": [
+        "Air temp C",
+        "Relative Humidity (%)",
+        "Atmospheric Pressure (mb)",
+        "hour",
+        "year",
+        "month",
+        "day",
+        "dayofyear"
+      ],
+      "model_path": "/home/LxSparda/Desktop/Kaite-LakeProject/Lake-St.Benedict/PURE WEATHER/models/model_weather_only_DO_delta_24h_mid.pkl"
+    }
+  ]
+}
