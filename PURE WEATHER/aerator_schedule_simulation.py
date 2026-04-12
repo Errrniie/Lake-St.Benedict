@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-Simulate DO with aerator (+0.5/h when low) vs model deltas from prediction CSVs.
+Simulate DO with aerator vs model deltas from prediction CSVs.
+
+Delta handling (1hr file): positive pred deltas are halved so the run trends more negative;
+negative deltas unchanged.
+
+When aerator is on: each hour S += delta_effective + aerator_rate (default 0.286), so
+natural ΔDO still modulates the rise. When off: S += delta_effective only.
 
 Uses:
   - *1hrdelta.csv: pred_DO_1h_quantile_mid (initial DO; optional trigger if < 3)
-  - *1hr.csv: pred_DO_delta_1h_quantile_mid (hourly add when aerator off)
+  - *1hr.csv: pred_DO_delta_1h_quantile_mid
 
 Outputs CSV + figure under PURE WEATHER/.
 """
@@ -35,6 +41,16 @@ _DEFAULT_FUTURE_CSV = os.path.join(
 )
 
 
+def _effective_delta(raw: np.ndarray, *, halve_positive: bool) -> np.ndarray:
+    d = np.asarray(raw, dtype=float)
+    if not halve_positive:
+        return d
+    out = d.copy()
+    pos = out > 0
+    out[pos] = out[pos] * 0.5
+    return out
+
+
 def simulate(
     df_delta: pd.DataFrame,
     df_future: pd.DataFrame,
@@ -42,15 +58,15 @@ def simulate(
     col_delta: str = "pred_DO_delta_1h_quantile_mid",
     col_future_1h: str = "pred_DO_1h_quantile_mid",
     threshold: float = 3.0,
-    aerator_rate: float = 0.5,
+    aerator_rate: float = 0.286,
     min_aerator_hours: int = 3,
-    max_aerator_hours_before_force_continue: int = 5,
+    halve_positive_deltas: bool = True,
     use_future_below_threshold_trigger: bool = False,
 ) -> pd.DataFrame:
     """
-    Hourly update:
-    - If aerator on: S += aerator_rate; stop when S > threshold and elapsed >= min_aerator_hours.
-    - If aerator off: S += delta[t]; if S < threshold (or optional: pred_1h[t] < threshold), start aerator next hour.
+    Hourly update (delta_effective = half positive deltas if enabled):
+    - If aerator on: S += delta_effective[t] + aerator_rate; stop when S > threshold and elapsed >= min_aerator_hours.
+    - If aerator off: S += delta_effective[t]; if S < threshold (or optional pred_1h), start aerator next hour.
 
     Note: pred_1h from the model is often < 3 for every hour — enabling use_future_below_threshold_trigger
     tends to keep the aerator on almost always. Default is simulated S < 3 only.
@@ -59,7 +75,8 @@ def simulate(
     if len(df_future) != n:
         raise ValueError("Delta and future CSVs must have the same row count.")
 
-    delta = pd.to_numeric(df_delta[col_delta], errors="coerce").fillna(0.0).to_numpy()
+    delta_raw = pd.to_numeric(df_delta[col_delta], errors="coerce").fillna(0.0).to_numpy()
+    delta_eff = _effective_delta(delta_raw, halve_positive=halve_positive_deltas)
     pred_1h = pd.to_numeric(df_future[col_future_1h], errors="coerce").to_numpy()
 
     S = float(pred_1h[0])
@@ -76,14 +93,14 @@ def simulate(
 
     for t in range(n):
         if aerator:
-            S += aerator_rate
+            S += delta_eff[t] + aerator_rate
             elapsed += 1
             stop_ok = S > threshold and elapsed >= min_aerator_hours
             if stop_ok:
                 aerator = False
                 elapsed = 0
         else:
-            S += delta[t]
+            S += delta_eff[t]
             if S < threshold or (
                 use_future_below_threshold_trigger and pred_1h[t] < threshold
             ):
@@ -96,8 +113,11 @@ def simulate(
     out = df_delta[["DATE"]].copy() if "DATE" in df_delta.columns else pd.DataFrame()
     out["simulated_DO"] = states
     out["aerator_on"] = flags
+    out["pred_DO_delta_raw"] = delta_raw
+    out["pred_DO_delta_effective"] = delta_eff
+    out["aerator_boost_h"] = np.where(np.array(flags, dtype=bool), aerator_rate, 0.0)
     out["pred_DO_delta_applied"] = np.where(
-        np.array(flags), np.nan, delta
+        np.array(flags, dtype=bool), np.nan, delta_eff
     )
     return out
 
@@ -145,7 +165,13 @@ def _plot_segments(
         )
 
 
-def plot_result(df: pd.DataFrame, title: str, out_png: str) -> None:
+def plot_result(
+    df: pd.DataFrame,
+    title: str,
+    out_png: str,
+    *,
+    aerator_rate: float = 0.286,
+) -> None:
     dt = pd.to_datetime(df["DATE"], errors="coerce")
     y = pd.to_numeric(df["simulated_DO"], errors="coerce").to_numpy()
     aer = df["aerator_on"].astype(bool).to_numpy()
@@ -164,7 +190,7 @@ def plot_result(df: pd.DataFrame, title: str, out_png: str) -> None:
         y,
         ~aer,
         color=color_off,
-        label="Aerator off (delta)",
+        label="Aerator off (ΔDO eff.)",
         zorder=1,
     )
     _plot_segments(
@@ -173,7 +199,7 @@ def plot_result(df: pd.DataFrame, title: str, out_png: str) -> None:
         y,
         aer,
         color=color_aer,
-        label="Aerator on (+0.5/h)",
+        label=f"Aerator on (ΔDO eff. + {aerator_rate:g}/h)",
         linewidth=1.35,
         zorder=3,
     )
@@ -228,8 +254,18 @@ def main() -> None:
         help="Output prefix for .csv and .png (no extension)",
     )
     p.add_argument("--threshold", type=float, default=3.0)
-    p.add_argument("--rate", type=float, default=0.5, help="DO gain per hour when aerator on")
+    p.add_argument(
+        "--rate",
+        type=float,
+        default=0.286,
+        help="Aerator DO addition per hour (added on top of effective ΔDO when aerator on)",
+    )
     p.add_argument("--min-hours", type=int, default=3)
+    p.add_argument(
+        "--no-halve-positive",
+        action="store_true",
+        help="Use raw predicted deltas (do not halve positive ΔDO values)",
+    )
     p.add_argument(
         "--future-trigger",
         action="store_true",
@@ -257,6 +293,7 @@ def main() -> None:
         threshold=args.threshold,
         aerator_rate=args.rate,
         min_aerator_hours=args.min_hours,
+        halve_positive_deltas=not args.no_halve_positive,
         use_future_below_threshold_trigger=args.future_trigger,
     )
 
@@ -267,6 +304,7 @@ def main() -> None:
         sim,
         os.path.basename(args.delta_csv) + " + aerator schedule",
         out_png,
+        aerator_rate=args.rate,
     )
     print(f"Wrote {out_csv}")
     print(f"Wrote {out_png}")
