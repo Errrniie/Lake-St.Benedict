@@ -62,3 +62,39 @@ def save_prediction_plot(
     fig.savefig(plot_path, dpi=120)
     plt.close(fig)
     return plot_path
+
+
+def save_prediction_plot_time_only(
+    output_csv_path: str,
+    df: pd.DataFrame,
+    pred_col: str,
+    date_col: str = "DATE",
+    *,
+    ylabel: str = "Predicted Delta DO",
+    title: str = "Predicted Delta DO",
+) -> str:
+    """
+    Single panel: DATE vs prediction (for delta targets). Writes ``<stem>.png``.
+    """
+    if pred_col not in df.columns:
+        raise ValueError(f"Column {pred_col!r} not in dataframe.")
+    if date_col not in df.columns:
+        raise ValueError(f"Column {date_col!r} required for time-only plot.")
+
+    y = pd.to_numeric(df[pred_col], errors="coerce").to_numpy()
+    dt = pd.to_datetime(df[date_col], errors="coerce")
+
+    stem, _ = os.path.splitext(output_csv_path)
+    plot_path = f"{stem}.png"
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 4.5))
+    ax.plot(dt, y, color="tab:green", linewidth=0.85)
+    ax.set_xlabel("DATE")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=22, ha="right")
+    fig.tight_layout()
+    fig.savefig(plot_path, dpi=120)
+    plt.close(fig)
+    return plot_path

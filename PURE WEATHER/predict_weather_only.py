@@ -17,7 +17,7 @@ if _PARSING not in sys.path:
 import joblib
 import pandas as pd
 
-from Module.Model.prediction_plot import save_prediction_plot
+from Module.Model.prediction_plot import save_prediction_plot, save_prediction_plot_time_only
 
 # Reuse feature construction (import would require package path; duplicate minimal list)
 WEATHER_COLS = [
@@ -86,13 +86,23 @@ def main() -> None:
     if not out_path.lower().endswith(".csv"):
         out_path = f"{out_path}.csv"
     df.to_csv(out_path, index=False)
-    plot_path = save_prediction_plot(
-        out_path,
-        df,
-        pred_col,
-        date_col="DATE",
-        title=os.path.basename(out_path),
-    )
+    if "delta" in pred_col.lower():
+        plot_path = save_prediction_plot_time_only(
+            out_path,
+            df,
+            pred_col,
+            date_col="DATE",
+            ylabel="Predicted Delta DO",
+            title="Predicted Delta DO",
+        )
+    else:
+        plot_path = save_prediction_plot(
+            out_path,
+            df,
+            pred_col,
+            date_col="DATE",
+            title=os.path.basename(out_path),
+        )
     print(f"Wrote {out_path} ({len(df)} rows), column {pred_col}")
     print(f"Wrote plot {plot_path}")
 

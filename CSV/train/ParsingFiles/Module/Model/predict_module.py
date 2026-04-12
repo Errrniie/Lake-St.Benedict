@@ -5,7 +5,7 @@ import os
 import pandas as pd
 
 from Module.Model.model_io import load_bundle
-from Module.Model.prediction_plot import save_prediction_plot
+from Module.Model.prediction_plot import save_prediction_plot, save_prediction_plot_time_only
 
 
 def predict_from_model_bundle(
@@ -63,13 +63,23 @@ def predict_from_model_bundle(
         output_csv_path = f"{output_csv_path}.csv"
     df.to_csv(output_csv_path, index=False)
 
-    plot_path = save_prediction_plot(
-        output_csv_path,
-        df,
-        pred_col,
-        date_col="DATE",
-        title=os.path.basename(output_csv_path),
-    )
+    if "delta" in pred_col.lower():
+        plot_path = save_prediction_plot_time_only(
+            output_csv_path,
+            df,
+            pred_col,
+            date_col="DATE",
+            ylabel="Predicted Delta DO",
+            title="Predicted Delta DO",
+        )
+    else:
+        plot_path = save_prediction_plot(
+            output_csv_path,
+            df,
+            pred_col,
+            date_col="DATE",
+            title=os.path.basename(output_csv_path),
+        )
 
     return {
         "output_path": output_csv_path,
