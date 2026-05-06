@@ -1,2 +1,2 @@
-"""DO delta/rate module."""
+"""DO rate/delta feature utilities."""
 

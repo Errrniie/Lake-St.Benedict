@@ -1,2 +1,2 @@
-"""Clean module (row filtering and cleanup)."""
+"""Cleaning helpers for parsed lake data."""
 

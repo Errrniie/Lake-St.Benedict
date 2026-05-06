@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import matplotlib
 
@@ -9,6 +10,20 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+
+def _resolve_plot_path(output_csv_path: str, subfolder: str = "predictions") -> str:
+    """For PURE WEATHER outputs, write figures under PURE WEATHER/figures/<subfolder>."""
+    out = Path(output_csv_path).resolve()
+    stem = out.stem
+    parts = out.parts
+    if "PURE WEATHER" in parts:
+        idx = parts.index("PURE WEATHER")
+        pw_root = Path(*parts[: idx + 1])
+        fig_dir = pw_root / "figures" / subfolder
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        return str(fig_dir / f"{stem}.png")
+    return str(out.with_suffix(".png"))
 
 
 def save_prediction_plot(
@@ -30,8 +45,7 @@ def save_prediction_plot(
     n = len(df)
     idx = np.arange(n, dtype=float)
 
-    stem, _ = os.path.splitext(output_csv_path)
-    plot_path = f"{stem}.png"
+    plot_path = _resolve_plot_path(output_csv_path, "predictions")
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 7))
     if title:
@@ -84,8 +98,7 @@ def save_prediction_plot_time_only(
     y = pd.to_numeric(df[pred_col], errors="coerce").to_numpy()
     dt = pd.to_datetime(df[date_col], errors="coerce")
 
-    stem, _ = os.path.splitext(output_csv_path)
-    plot_path = f"{stem}.png"
+    plot_path = _resolve_plot_path(output_csv_path, "predictions")
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 4.5))
     ax.plot(dt, y, color="tab:green", linewidth=0.85)

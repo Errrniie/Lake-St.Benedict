@@ -186,7 +186,9 @@ def train_one_target(
 
 def main() -> None:
     _here = os.path.dirname(os.path.abspath(__file__))
-    default_csv = os.path.join(_here, "DO_lakedata_parsed.csv")
+    default_csv = os.path.join(_here, "data", "lake", "DO_lakedata_parsed.csv")
+    if not os.path.isfile(default_csv):
+        default_csv = os.path.join(_here, "DO_lakedata_parsed.csv")
     if not os.path.isfile(default_csv):
         default_csv = os.path.join(os.path.dirname(_here), "DO_lakedata_parsed.csv")
 

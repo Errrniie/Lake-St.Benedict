@@ -5,7 +5,7 @@
 - **`Models/`** — copy of `CSV/train/ParsingFiles/Module/Model/Models` plus new bundles from the **GUI** (Train / Predict / Model Manager all use this path).
 - **`models/`** (lowercase) — legacy outputs from `train_weather_only.py` only; prefer **`Models/`** for new work.
 
-## `DO_lakedata_parsed.csv`
+## `data/lake/DO_lakedata_parsed.csv`
 
 Working copy of the lake table: **Water Temp removed**. Columns include weather, `hour`, `AT_TLAG_*`, `DO`, and `DO_delta_*`.
 
@@ -27,14 +27,14 @@ From the **repository root**:
 python "PURE WEATHER/train_weather_only.py"
 ```
 
-Default input is **`PURE WEATHER/DO_lakedata_parsed.csv`**.
+Default input is **`PURE WEATHER/data/lake/DO_lakedata_parsed.csv`**.
 
 Metrics JSON default: **`PURE WEATHER/models/metrics_weather_only.json`** (`--out-dir` to change).
 
 ## Predict (standalone)
 
 ```bash
-python "PURE WEATHER/predict_weather_only.py" --model "PURE WEATHER/Models/model_DO_delta_12h_quantile_mid.pkl" --csv "PURE WEATHER/DO_lakedata_parsed.csv" -o predictions_test.csv
+python "PURE WEATHER/predict_weather_only.py" --model "PURE WEATHER/Models/model_DO_delta_12h_quantile_mid.pkl" --csv "PURE WEATHER/data/lake/DO_lakedata_parsed.csv" -o predictions_test.csv
 ```
 
 Dependencies: same as the main project (`pandas`, `lightgbm`, `scikit-learn`, `joblib`).

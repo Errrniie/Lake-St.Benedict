@@ -41,6 +41,12 @@ _DEFAULT_FUTURE_CSV = os.path.join(
 )
 
 
+def _default_aerator_figure_path(out_prefix: str) -> str:
+    fig_dir = os.path.join(_HERE, "figures", "aerator_sim")
+    os.makedirs(fig_dir, exist_ok=True)
+    return os.path.join(fig_dir, f"{os.path.basename(out_prefix)}.png")
+
+
 def _effective_delta(raw: np.ndarray, *, halve_positive: bool) -> np.ndarray:
     d = np.asarray(raw, dtype=float)
     if not halve_positive:
@@ -250,8 +256,15 @@ def main() -> None:
     )
     p.add_argument(
         "--out-prefix",
-        default=os.path.join(_HERE, "Largest_Humidity_Summer_aerator_sim"),
-        help="Output prefix for .csv and .png (no extension)",
+        default=os.path.join(
+            _HERE, "outputs", "aerator_simulations", "Largest_Humidity_Summer_aerator_sim"
+        ),
+        help="Output prefix for CSV path (figure defaults to PURE WEATHER/figures/aerator_sim)",
+    )
+    p.add_argument(
+        "--out-figure",
+        default=None,
+        help="Optional explicit PNG output path (default: PURE WEATHER/figures/aerator_sim/<out-prefix>.png)",
     )
     p.add_argument("--threshold", type=float, default=3.0)
     p.add_argument(
@@ -298,7 +311,9 @@ def main() -> None:
     )
 
     out_csv = f"{args.out_prefix}.csv"
-    out_png = f"{args.out_prefix}.png"
+    out_png = args.out_figure if args.out_figure else _default_aerator_figure_path(args.out_prefix)
+    if not out_png.lower().endswith(".png"):
+        out_png = f"{out_png}.png"
     sim.to_csv(out_csv, index=False)
     plot_result(
         sim,

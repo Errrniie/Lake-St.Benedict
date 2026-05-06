@@ -27,11 +27,11 @@ def add_do_deltas(
     """
     Forward-looking DO change and future DO levels.
 
-    For each row at time t, we take the first observation at or after t+h (merge_asof,
-    direction=\"forward\"). Then:
+    For each row at time t, we take the first observation at or after t+h
+    (merge_asof, direction="forward"). Then:
 
-    - ``DO_delta_{h}h`` = future_DO - DO(t)   (change over the next h hours)
-    - ``DO_{h}h``       = future_DO           (absolute DO at that future sample)
+    - DO_delta_{h}h = future_DO - DO(t)
+    - DO_{h}h       = future_DO
 
     Rows with no future observation at or after t+h get NaN for both columns.
     """
@@ -81,6 +81,7 @@ def apply_nan_string(
 ) -> pd.DataFrame:
     # Keep real NaN values for ML-ready numeric columns.
     # `na_string` is intentionally ignored for this modular pipeline path.
+    del na_string
     out = df.copy()
     for col in [delta_column(h) for h in horizons] + [future_do_column(h) for h in horizons]:
         if col in out.columns:
@@ -89,5 +90,6 @@ def apply_nan_string(
 
 
 def is_future_do_column(name: str) -> bool:
-    """True for columns like ``DO_1h``, ``DO_24h`` (future DO levels)."""
+    """True for columns like DO_1h, DO_24h."""
     return re.fullmatch(r"DO_\d+h", str(name).strip()) is not None
+

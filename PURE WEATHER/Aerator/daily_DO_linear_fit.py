@@ -14,8 +14,8 @@ from scipy.stats import linregress
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 INPUT_CSV = os.path.join(_HERE, "DO_lakedata.csv")
-OUT_CSV = os.path.join(_HERE, "daily_DO_linear_slopes.csv")
-OUT_PNG = os.path.join(_HERE, "DO_vs_time_by_day_linear_fit.png")
+OUT_CSV = os.path.join(os.path.dirname(_HERE), "outputs", "aerator_analysis", "daily_DO_linear_slopes.csv")
+OUT_PNG = os.path.join(os.path.dirname(_HERE), "figures", "aerator_analysis", "DO_vs_time_by_day_linear_fit.png")
 
 
 def time_of_day_hours(ts: pd.Series) -> np.ndarray:
@@ -87,6 +87,7 @@ def main() -> None:
 
     fig.suptitle("DO vs time of day (aerator-on rows) with linear fit", fontsize=12)
     fig.tight_layout()
+    os.makedirs(os.path.dirname(OUT_PNG), exist_ok=True)
     fig.savefig(OUT_PNG, dpi=130)
     plt.close(fig)
 
@@ -103,6 +104,7 @@ def main() -> None:
         "time_end_h": np.nan,
     }
     out_df = pd.DataFrame(rows + [summary])
+    os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
     out_df.to_csv(OUT_CSV, index=False)
 
     print(f"Wrote {OUT_CSV}")

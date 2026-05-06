@@ -19,6 +19,7 @@ _PW = _HERE
 _PD = os.path.join(_PW, "ParsedWeatherData")
 _PR = os.path.join(_PD, "predictions")
 _M = os.path.join(_PW, "Models")
+_AERATOR_SIM_OUT = os.path.join(_PW, "outputs", "aerator_simulations")
 _VENV_PY = os.path.join(_REPO, ".venv", "bin", "python")
 
 SCENARIOS = [
@@ -33,6 +34,7 @@ def main() -> None:
     from Module.Model.predict_module import predict_from_model_bundle
 
     os.makedirs(_PR, exist_ok=True)
+    os.makedirs(_AERATOR_SIM_OUT, exist_ok=True)
 
     for stem, out_prefix in SCENARIOS:
         src = os.path.join(_PD, f"{stem}.csv")
@@ -51,7 +53,7 @@ def main() -> None:
         )
 
         sim_py = os.path.join(_PW, "aerator_schedule_simulation.py")
-        out_base = os.path.join(_PW, out_prefix)
+        out_base = os.path.join(_AERATOR_SIM_OUT, out_prefix)
         subprocess.run(
             [
                 _VENV_PY,

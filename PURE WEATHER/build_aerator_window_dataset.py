@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build DO_lakedata_parsed_aerator_12h.csv: copy of PURE WEATHER/DO_lakedata_parsed.csv
+Build DO_lakedata_parsed_aerator_12h.csv: copy of PURE WEATHER/data/lake/DO_lakedata_parsed.csv
 keeping rows within ±12 hours of each aerator on/off transition (from DO_lakedata_parsed.csv).
 Adds Aerated and Aerator_TLAG_* from the full parsed lake file.
 
@@ -19,9 +19,22 @@ _REPO = os.path.dirname(_HERE)
 
 
 def _build() -> str:
-    path_pw = os.path.join(_HERE, "DO_lakedata_parsed.csv")
-    path_full = os.path.join(_REPO, "DO_lakedata_parsed.csv")
-    out_path = os.path.join(_HERE, "DO_lakedata_parsed_aerator_12h.csv")
+    path_pw = os.path.join(_HERE, "data", "lake", "DO_lakedata_parsed.csv")
+    full_candidates = [
+        os.path.join(_REPO, "DO_lakedata_parsed.csv"),
+        os.path.join(_REPO, "Original Gathered Data", "Parsed Data", "DO_lakedata_parsed.csv"),
+    ]
+    path_full = ""
+    for cand in full_candidates:
+        if os.path.isfile(cand):
+            path_full = cand
+            break
+    if not path_full:
+        raise FileNotFoundError(
+            "Missing full parsed lake CSV. Tried: "
+            + ", ".join(full_candidates)
+        )
+    out_path = os.path.join(_HERE, "data", "lake", "DO_lakedata_parsed_aerator_12h.csv")
 
     df_pw = pd.read_csv(path_pw)
     df_full = pd.read_csv(path_full)
